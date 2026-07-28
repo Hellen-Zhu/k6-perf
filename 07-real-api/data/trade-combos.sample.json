@@ -1,0 +1,14 @@
+[
+  {
+    "portfolioId": "PLACEHOLDER_PORTFOLIO_ID_1",
+    "counterpartyFmId": "PLACEHOLDER_COUNTERPARTY_FM_ID_1",
+    "counterpartyName": "PLACEHOLDER_COUNTERPARTY_NAME_1",
+    "notionalCurrency": ""
+  },
+  {
+    "portfolioId": "PLACEHOLDER_PORTFOLIO_ID_2",
+    "counterpartyFmId": "PLACEHOLDER_COUNTERPARTY_FM_ID_2",
+    "counterpartyName": "PLACEHOLDER_COUNTERPARTY_NAME_2",
+    "notionalCurrency": ""
+  }
+]
