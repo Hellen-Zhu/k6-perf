@@ -1,0 +1,5 @@
+.DS_Store
+*.log
+summary.json
+summary.html
+node_modules/
