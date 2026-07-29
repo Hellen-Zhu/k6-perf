@@ -54,33 +54,113 @@ http.post(url, data, { headers: { /* 不要手动加 Content-Type */ } });
 
 ## 怎么跑
 
-k6 CLI 本身没有"只跑某个 scenario"的参数,脚本里用环境变量 `SMOKE_ONLY` 在 `options.scenarios` 上做了开关(见 `trades-create.js` 顶部注释),**第一次跑真实接口务必先只跑冒烟测试**:
+### 0. 准备
+
+在 Windows 上(确认 `00-install` 里 `k6 version` 能跑通之后):
 
 ```powershell
-# 只跑冒烟测试(1 次请求),先确认接口通不通、multipart 构造对不对
+git clone https://github.com/Hellen-Zhu/k6-perf.git
+cd k6-perf/07-real-api
+```
+
+把真实数据放进去(替换掉占位文件,文件名不变):
+- `data/trade-combos.sample.json` → 换成真实的 portfolioId/counterpartyFmId 组合
+- `data/0_instrument.dat` → 换成真实的二进制文件
+
+### 1. 先只跑冒烟测试(务必第一步做这个)
+
+k6 CLI 本身没有"只跑某个 scenario"的参数,脚本里用环境变量 `SMOKE_ONLY` 在 `options.scenarios` 上做了开关(见 `trades-create.js` 顶部注释):
+
+```powershell
 k6 run -e SMOKE_ONLY=true trades-create.js
 ```
 
-本地验证过(用假数据打不存在的内网地址,`http_req_failed` 会 100% 触发 threshold 失败,退出码 99——这是预期的,因为请求根本没连上,真实环境里换成能连通的地址后这条 threshold 就该正常了):
+只会发 **1 次请求**,几秒内跑完。这一步的唯一目的是确认:接口能连通、multipart 构造对、鉴权头对、返回的状态码符合预期。**这一步不过,后面加并发毫无意义**,先把这一步的报告发我看也行。
 
-```
-    ✗ status is 2xx
-      ↳  0% — ✓ 0 / ✗ 1
-
-    CUSTOM
-    trade_create_failure...: 1       4.305223/s
-
-running (00m00.2s), 0/1 VUs, 1 complete and 0 interrupted iterations
-smoke ✓ [ 100% ] 1 VUs  00m00.2s/10m0s  1/1 shared iters
-```
-
-确认 smoke 跑通、状态码和响应体都符合预期之后,再跑完整流程(smoke + load):
+### 2. 跑完整流程(smoke + load)
 
 ```powershell
 k6 run trades-create.js
 ```
 
-第一次跑完整流程,**强烈建议先把 `load` 场景的 `stages` 峰值改成 1~2 个 VU、跑 10 秒**,肉眼确认没问题(有没有报错、有没有意外创建了不该有的数据)之后,再按需要调大。
+第一次跑,**强烈建议先把 `trades-create.js` 里 `load` 场景的 `stages` 峰值临时改成 1~2 个 VU、跑 10 秒**,肉眼确认没问题(有没有报错、有没有意外创建了不该有的数据)之后,再按需要调大。
+
+也可以不改文件,直接用 CLI 参数临时覆盖 VU 数和时长(会整个替换掉 `scenarios` 配置,变成跑一个简单的 `default` 场景——但这个脚本没有 `default` 函数,所以**这种覆盖方式对这个脚本不适用**,要调并发只能改脚本里的 `stages` 数字,这是当前脚本设计带来的限制)。
+
+### 3. 想换目标环境(比如从 dev 切到 uat)
+
+```powershell
+k6 run -e BASE_URL=http://your-uat-host:port trades-create.js
+```
+
+## 怎么看报告
+
+k6 默认只在终端打印文本报告,跑完之后大概长这样(下面是本地拿假数据、打不通的地址跑出来的,结构和真实跑出来的一样,只是数字会不同):
+
+```
+    ✗ status is 2xx
+      ↳  0% — ✓ 0 / ✗ 73
+
+    CUSTOM
+    trade_create_success...: 0        0/s
+    trade_create_failure...: 73       1.24816/s
+
+    HTTP
+    http_req_duration......: avg=1.21s min=227.45ms med=783.65ms max=11.54s p(90)=2.14s p(95)=3.4s
+    http_req_failed........: 100.00% 73 out of 73
+    http_reqs..............: 73      1.24816/s
+
+    EXECUTION
+    iterations.............: 73      1.24816/s
+    vus.....................: 1       min=1        max=5
+    vus_max.................: 6       min=6        max=6
+
+  █ THRESHOLDS
+
+    http_req_duration
+    ✗ 'p(95)<2000' p(95)=3.4s
+
+    http_req_failed
+    ✗ 'rate<0.01' rate=100.00%
+
+running (00m58.5s), 0/6 VUs, 73 complete and 0 interrupted iterations
+```
+
+按看报告的顺序,从上往下应该关心这几件事:
+
+1. **`✗`/`✓ status is 2xx` 这一行**——最先看这个。如果大量 `✗`,先别看别的指标,直接看下面第 2 点定位是什么错。
+2. **失败时终端会打印具体错误**——脚本里 `console.error` 会把每次失败请求的状态码和响应体原样打出来,滚动往上翻日志能看到类似 `trade create failed: status=400 body={"error":"..."}` 这种行,这是判断"到底是数据错了还是接口错了"最直接的线索。
+3. **`CUSTOM` 分组的 `trade_create_success`/`trade_create_failure`**——一眼看出总共成功/失败了多少次交易创建,不用自己数。
+4. **`HTTP` 分组**——`http_req_failed`(网络层面失败率,包括超时/连接失败/非 2xx)和 `http_req_duration` 的 `p(95)`(95% 的请求响应多快)。这两个是判断接口"扛不扛得住"最核心的两个数。
+5. **`EXECUTION` 分组的 `vus_max`**——确认压测过程中真的达到了你设置的并发峰值,不是因为哪里卡住了没爬到目标值。
+6. **`THRESHOLDS` 分组(如果有失败会单独列出来)**——这是"通过/失败"的判定结果,只要这里有 `✗`,整个 k6 进程就会以非 0 退出码结束。PowerShell 里用 `$LASTEXITCODE` 查看:退出码 `99` 专指"因为 thresholds 被突破"。
+7. **最后一行 `running (...), X/Y VUs, N complete and M interrupted iterations`**——`M interrupted` 如果不是 0,说明有迭代因为压测提前结束/收尾而被打断,不算真正跑完,解读其它指标时要考虑这部分噪声。
+
+### 想要 JSON/HTML 格式的报告(方便存档或发给别人)
+
+终端报告只在这次运行时可见,想留存或者发给同事看,有两种常用方式:
+
+**方式一:导出精简版摘要(和终端最后那段汇总内容一样,存成 JSON 文件)**
+
+```powershell
+k6 run --summary-export=summary.json trades-create.js
+```
+
+**方式二:生成可视化的 HTML 报告**
+
+k6 本身不自带 HTML 报告,业界通用做法是在脚本末尾加一个 `handleSummary()` 函数,借助开源的 [k6-reporter](https://github.com/benc-uk/k6-reporter) 生成 HTML。如果你需要这个,告诉我,我帮你把这几行加到 `trades-create.js` 里:
+
+```js
+import { htmlReport } from 'https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js';
+
+export function handleSummary(data) {
+  return {
+    'summary.html': htmlReport(data), // 生成一份可以直接用浏览器打开的报告
+  };
+}
+```
+
+(这一行 `import` 是从网上加载脚本,需要压测的机器能访问 GitHub Raw——如果 Windows 那台机器是完全隔离的内网,这个方式不可行,只能用方式一的 JSON。)
 
 ## 自查清单
 
