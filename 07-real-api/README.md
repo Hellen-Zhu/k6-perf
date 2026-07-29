@@ -146,21 +146,28 @@ running (00m58.5s), 0/6 VUs, 73 complete and 0 interrupted iterations
 k6 run --summary-export=summary.json trades-create.js
 ```
 
-**方式二:生成可视化的 HTML 报告**
+**方式二:生成可视化的 HTML 报告(已经集成好了,直接能用)**
 
-k6 本身不自带 HTML 报告,业界通用做法是在脚本末尾加一个 `handleSummary()` 函数,借助开源的 [k6-reporter](https://github.com/benc-uk/k6-reporter) 生成 HTML。如果你需要这个,告诉我,我帮你把这几行加到 `trades-create.js` 里:
+`trades-create.js` 里已经加了 [k6-reporter](https://github.com/benc-uk/k6-reporter)(固定用 `3.0.4` 版本,不用 `latest`,避免它以后升级导致报告格式突然变化):
 
 ```js
-import { htmlReport } from 'https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js';
+import { htmlReport } from 'https://raw.githubusercontent.com/benc-uk/k6-reporter/3.0.4/dist/bundle.js';
+import { textSummary } from 'https://jslib.k6.io/k6-summary/0.0.2/index.js';
 
 export function handleSummary(data) {
   return {
-    'summary.html': htmlReport(data), // 生成一份可以直接用浏览器打开的报告
+    'summary.html': htmlReport(data, { title: 'trades/create 压测报告' }),
+    stdout: textSummary(data, { indent: ' ', enableColors: true }), // 保留终端文本报告
   };
 }
 ```
 
-(这一行 `import` 是从网上加载脚本,需要压测的机器能访问 GitHub Raw——如果 Windows 那台机器是完全隔离的内网,这个方式不可行,只能用方式一的 JSON。)
+不用额外加参数,正常 `k6 run trades-create.js` 跑完,当前目录下就会多出一个 `summary.html`,双击用浏览器打开就是可视化报告(已本地验证生成的文件结构正常)。几点需要知道:
+
+- **需要压测的机器能访问 GitHub**——`import` 那两行是压测开始前从网上拉取脚本逻辑,你确认过能访问 GitHub,所以没问题。
+- **报告本身在浏览器里显示时,也会从 CDN 加载字体和图标**(不是压测机器,是你打开这个 HTML 文件的那台电脑要联网)——内容数据本身是内嵌在 HTML 里的,没网也能看到数据,只是样式会不完整。
+- **终端上的文字报告格式会有细微变化**(布局稍微不一样,但所有指标、checks、thresholds 数据都还在,不用担心信息变少)——这是因为改用了 `k6-summary` 这个库自己的排版方式来打印,而不是 k6 内置的默认排版。
+- **`summary.html` 已经加进 `.gitignore`**,每次跑测试自己在本地生成就行,不需要提交到仓库里。
 
 ## 自查清单
 
