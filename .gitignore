@@ -2,4 +2,5 @@
 *.log
 summary.json
 summary.html
+html-report.html
 node_modules/

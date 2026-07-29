@@ -146,28 +146,27 @@ running (00m58.5s), 0/6 VUs, 73 complete and 0 interrupted iterations
 k6 run --summary-export=summary.json trades-create.js
 ```
 
-**方式二:生成可视化的 HTML 报告(已经集成好了,直接能用)**
+**方式二:k6 内置的 Web Dashboard(推荐,完全离线、不用装任何东西、不用改脚本)**
 
-`trades-create.js` 里已经加了 [k6-reporter](https://github.com/benc-uk/k6-reporter)(固定用 `3.0.4` 版本,不用 `latest`,避免它以后升级导致报告格式突然变化):
+k6 从核心就自带这个功能(不是第三方库,不用 `import` 任何东西,也不需要联网),用环境变量开启:
 
-```js
-import { htmlReport } from 'https://raw.githubusercontent.com/benc-uk/k6-reporter/3.0.4/dist/bundle.js';
-import { textSummary } from 'https://jslib.k6.io/k6-summary/0.0.2/index.js';
+```powershell
+# 压测过程中实时看仪表盘: 浏览器打开 http://127.0.0.1:5665
+$env:K6_WEB_DASHBOARD="true"; k6 run trades-create.js
 
-export function handleSummary(data) {
-  return {
-    'summary.html': htmlReport(data, { title: 'trades/create 压测报告' }),
-    stdout: textSummary(data, { indent: ' ', enableColors: true }), // 保留终端文本报告
-  };
-}
+# 同时在跑完后导出一份自包含的 HTML 报告文件
+$env:K6_WEB_DASHBOARD="true"; $env:K6_WEB_DASHBOARD_EXPORT="html-report.html"; k6 run trades-create.js
 ```
 
-不用额外加参数,正常 `k6 run trades-create.js` 跑完,当前目录下就会多出一个 `summary.html`,双击用浏览器打开就是可视化报告(已本地验证生成的文件结构正常)。几点需要知道:
+本地已经验证过:生成的 `html-report.html`(约 167KB)**不引用任何外部 CDN/字体/脚本**,双击用浏览器打开随时能看,彻底离线可用,比依赖网上第三方库的方式更符合你们的环境要求。
 
-- **需要压测的机器能访问 GitHub**——`import` 那两行是压测开始前从网上拉取脚本逻辑,你确认过能访问 GitHub,所以没问题。
-- **报告本身在浏览器里显示时,也会从 CDN 加载字体和图标**(不是压测机器,是你打开这个 HTML 文件的那台电脑要联网)——内容数据本身是内嵌在 HTML 里的,没网也能看到数据,只是样式会不完整。
-- **终端上的文字报告格式会有细微变化**(布局稍微不一样,但所有指标、checks、thresholds 数据都还在,不用担心信息变少)——这是因为改用了 `k6-summary` 这个库自己的排版方式来打印,而不是 k6 内置的默认排版。
-- **`summary.html` 已经加进 `.gitignore`**,每次跑测试自己在本地生成就行,不需要提交到仓库里。
+几点需要知道:
+
+- **跑起来后终端会多打印一行** `web dashboard: http://127.0.0.1:5665`——压测过程中随时用浏览器打开这个地址,能看实时曲线(不只是跑完才能看)。
+- **测试太短(短于 30 秒左右)不会导出报告**,终端会提示 `The test run was short, report generation was skipped (not enough data)`——因为默认每 10 秒聚合一次数据,至少要攒够 3 个周期才有图表可画。只跑 `SMOKE_ONLY=true`(几秒钟就结束)不会生成报告文件是正常的,想看报告要跑完整的 `load` 场景。
+- **常用可调参数**(都是环境变量):`K6_WEB_DASHBOARD_PORT`(改端口,默认 `5665`)、`K6_WEB_DASHBOARD_PERIOD`(改聚合周期,默认 `10s`)、`K6_WEB_DASHBOARD_OPEN=true`(跑起来自动打开浏览器)。
+- **不需要改 `trades-create.js` 里的任何代码**——这是 k6 CLI 层面的功能,和脚本内容无关,`template.js` 或以后压其他接口的脚本都能直接这样用。
+- **PowerShell 里一次性写多个环境变量**用分号分隔,像上面命令那样;如果嫌每次敲麻烦,可以把这两行写进一个 `.ps1` 脚本里。
 
 ## 自查清单
 

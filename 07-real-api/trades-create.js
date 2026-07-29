@@ -2,8 +2,6 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { SharedArray } from 'k6/data';
 import { Counter } from 'k6/metrics';
-import { htmlReport } from 'https://raw.githubusercontent.com/benc-uk/k6-reporter/3.0.4/dist/bundle.js';
-import { textSummary } from 'https://jslib.k6.io/k6-summary/0.0.2/index.js';
 
 // 目标环境走环境变量,方便切换 dev/uat:
 // k6 run -e BASE_URL=http://uklvadptaa0005a.pi.dev.net:9089 trades-create.js
@@ -126,15 +124,4 @@ export function loadTest() {
   const combo = tradeCombos[Math.floor(Math.random() * tradeCombos.length)];
   createTrade(combo);
   sleep(1);
-}
-
-// 压测跑完后,除了照常在终端打印文本报告,额外生成一份 summary.html,
-// 双击就能用浏览器打开查看(需要跑压测的机器能访问 GitHub Raw 才能加载 k6-reporter/jslib)。
-// 注意: 一旦定义了 handleSummary(),k6 默认不会再自动打印终端报告,
-// 必须像下面这样自己在返回值里加上 stdout,否则终端会啥都不显示。
-export function handleSummary(data) {
-  return {
-    'summary.html': htmlReport(data, { title: 'trades/create 压测报告' }),
-    stdout: textSummary(data, { indent: ' ', enableColors: true }),
-  };
 }
